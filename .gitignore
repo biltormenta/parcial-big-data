@@ -1,0 +1,8 @@
+# nada de credenciales ni datos en el repo
+.env
+kaggle.json
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+

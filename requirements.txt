@@ -1,0 +1,12 @@
+dask[distributed,dataframe]==2024.12.1
+pandas==2.2.3
+pyarrow==18.1.0
+numpy<2
+pymongo==4.10.1
+flask==3.1.0
+gunicorn==23.0.0
+kagglehub==0.3.4
+requests==2.32.3
+psutil==6.1.0
+pytest==8.3.4
+matplotlib==3.9.3
