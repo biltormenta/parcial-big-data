@@ -1,0 +1,128 @@
+name: geolife
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/app.Dockerfile
+  image: geolife-app:latest
+  environment:
+    MONGO_URI: mongodb://mongo:27017
+    MONGO_DB: geolife
+    DASK_SCHEDULER: tcp://dask-scheduler:8786
+    DATOS_DIR: /data
+  volumes:
+    - datos:/data
+
+x-spark: &spark
+  build:
+    context: .
+    dockerfile: docker/spark.Dockerfile
+  image: geolife-spark:latest
+  user: root
+  volumes:
+    - datos:/data
+
+services:
+  mongo:
+    image: mongo:7
+    ports: ["27017:27017"]
+    volumes:
+      - mongo_datos:/data/db
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.5"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      resources:
+        limits: {memory: 1200m}
+
+  dask-scheduler:
+    <<: *app
+    command: ["dask", "scheduler", "--port", "8786", "--dashboard-address", ":8787"]
+    ports: ["8787:8787"]
+
+  dask-worker:
+    <<: *app
+    command: ["dask", "worker", "tcp://dask-scheduler:8786", "--nthreads", "1", "--memory-limit", "1GB"]
+    depends_on: [dask-scheduler]
+    deploy:
+      replicas: 2
+
+  spark-master:
+    <<: *spark
+    hostname: spark-master
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master"]
+    ports: ["8081:8080"]
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: geolife
+
+  spark-worker:
+    <<: *spark
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077",
+              "--cores", "1", "--memory", "800m"]
+    depends_on: [spark-master]
+    deploy:
+      replicas: 2
+
+  api:
+    <<: *app
+    ports: ["5000:5000"]
+    depends_on:
+      mongo: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:5000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # job de una sola vez: descarga de kaggle + limpieza con dask + carga a mongo
+  ingesta:
+    <<: *app
+    command: ["python", "-m", "app.ingesta"]
+    profiles: ["jobs"]
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: geolife
+      DASK_SCHEDULER: tcp://dask-scheduler:8786
+      DATOS_DIR: /data
+      OBJETIVO_REGISTROS: ${OBJETIVO_REGISTROS:-2000000}
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
+      KAGGLE_KEY: ${KAGGLE_KEY:-}
+    depends_on:
+      mongo: {condition: service_healthy}
+      dask-worker: {condition: service_started}
+
+  # pruebas de humo contra la api (las usa jenkins)
+  pruebas-api:
+    <<: *app
+    command: ["pytest", "tests/smoke", "-v"]
+    profiles: ["tests"]
+    environment:
+      API_URL: http://api:5000
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: geolife
+    depends_on:
+      api: {condition: service_healthy}
+
+  jenkins:
+    build:
+      context: docker/jenkins
+    image: geolife-jenkins:latest
+    user: root
+    ports: ["8080:8080", "50000:50000"]
+    environment:
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-admin}
+      REPO_URL: ${REPO_URL:-https://github.com/USUARIO/geolife-geoespacial.git}
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
+      KAGGLE_KEY: ${KAGGLE_KEY:-}
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  datos:
+  mongo_datos:
+  jenkins_home:
