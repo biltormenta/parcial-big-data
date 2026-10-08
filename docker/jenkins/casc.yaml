@@ -1,0 +1,46 @@
+jenkins:
+  systemMessage: "Jenkins del proyecto geolife (configurado con JCasC)"
+  numExecutors: 2
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+# el token de kaggle vive aqui como credencial, viene del entorno del contenedor y no esta en el repo
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "kaggle-username"
+              secret: "${KAGGLE_USERNAME:-}"
+              description: "usuario de kaggle (opcional)"
+          - string:
+              scope: GLOBAL
+              id: "kaggle-key"
+              secret: "${KAGGLE_KEY:-}"
+              description: "token de la api de kaggle (opcional)"
+
+jobs:
+  - script: >
+      pipelineJob('geolife-geoespacial') {
+        description('Pipeline del repo: build, pytest, pruebas contra la api y despliegue')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote { url(System.getenv('REPO_URL')) }
+                branches('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile')
+          }
+        }
+        triggers { githubPush() }
+      }
