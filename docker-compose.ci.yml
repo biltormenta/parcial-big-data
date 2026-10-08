@@ -1,0 +1,7 @@
+# override que usa jenkins para la pila de pruebas (proyecto geolife-ci):
+# no publica puertos fijos para no chocar con el despliegue real
+services:
+  mongo:
+    ports: !override []
+  api:
+    ports: !override []
