@@ -59,6 +59,7 @@ def validar_limite(limite, defecto=100):
 
 def validar_poligono(entrada):
     """Garantiza la estructura GeoJSON válida para un Polygon o MultiPolygon con anillos cerrados."""
+    # El polígono puede llegar "suelto" o envuelto en un Feature (así lo exporta geojson.io); se acepta cualquiera
     geom = entrada
     if isinstance(geom, dict) and geom.get("type") == "Feature":
         geom = geom.get("geometry")
@@ -67,11 +68,14 @@ def validar_poligono(entrada):
     coords = geom.get("coordinates")
     if not isinstance(coords, list) or not coords:
         raise ParametroInvalido("el poligono no tiene coordenadas")
+    # Un Polygon es una lista de anillos; un MultiPolygon es una lista de polígonos: se aplanan para revisar todos los anillos
     anillos = coords if geom["type"] == "Polygon" else [a for p in coords for a in p]
     for anillo in anillos:
+        # Regla de GeoJSON: un anillo cerrado necesita mínimo 4 posiciones y la última igual a la primera
         if not isinstance(anillo, list) or len(anillo) < 4 or anillo[0] != anillo[-1]:
             raise ParametroInvalido("cada anillo necesita minimo 4 posiciones y cerrar en el mismo punto inicial")
         for pos in anillo:
+            # En GeoJSON cada posición es [lon, lat]; validar_punto recibe (lat, lon), por eso va al revés
             validar_punto(pos[1], pos[0])
     return geom
 
@@ -94,6 +98,8 @@ def coleccion_fc(docs):
 
 def cercanos(col, lat, lon, radio_m, limite):
     """Consulta puntos cercanos dentro de un radio usando el operador espacial $near de MongoDB."""
+    # $near usa el índice 2dsphere y devuelve los resultados ORDENADOS del más cercano al más lejano.
+    # El punto va en orden [lon, lat] y $maxDistance está en metros.
     filtro = {"loc": {"$near": {"$geometry": {"type": "Point", "coordinates": [lon, lat]},
                                 "$maxDistance": radio_m}}}
     return list(col.find(filtro, CAMPOS).limit(limite))
@@ -101,6 +107,7 @@ def cercanos(col, lat, lon, radio_m, limite):
 
 def dentro_poligono(col, geom, limite):
     """Consulta puntos que se encuentran contenidos dentro de una geometría usando $geoWithin."""
+    # $geoWithin devuelve los puntos que caen dentro del polígono recibido (sin ningún orden en particular)
     filtro = {"loc": {"$geoWithin": {"$geometry": geom}}}
     return list(col.find(filtro, CAMPOS).limit(limite))
 
@@ -112,14 +119,20 @@ def geonear_por_campo(col, lat, lon, radio_m, campo="hora"):
     # CÓDIGO ORIGINAL (ACTIVO): Pipeline estándar de agregación geoespacial
     # ------------------------------------------------------------------------------------------
     pipeline = [
+        # Etapa 1: $geoNear DEBE ser la primera del pipeline. Filtra por radio (metros) y agrega a cada
+        # documento su distancia al punto en el campo "dist_m"
         {"$geoNear": {"near": {"type": "Point", "coordinates": [lon, lat]},
                       "distanceField": "dist_m", "maxDistance": radio_m,
                       "spherical": True, "key": "loc"}},
+        # Etapa 2: agrupa por el campo elegido (hora, día, mes o año) y calcula cuántos puntos hay,
+        # la distancia media y los usuarios distintos (addToSet no repite valores)
         {"$group": {"_id": f"${campo}", "puntos": {"$sum": 1},
                     "dist_media_m": {"$avg": "$dist_m"}, "usuarios": {"$addToSet": "$usuario"}}},
+        # Etapa 3: da forma a la salida (el _id del grupo pasa a llamarse como el campo, redondea la distancia, cuenta usuarios)
         {"$project": {"_id": 0, campo: "$_id", "puntos": 1,
                       "dist_media_m": {"$round": ["$dist_media_m", 1]},
                       "usuarios_distintos": {"$size": "$usuarios"}}},
+        # Etapa 4: ordena por el campo temporal de menor a mayor (0h, 1h, 2h... / lunes, martes...)
         {"$sort": {campo: 1}},
     ]
 

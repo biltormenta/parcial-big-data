@@ -1,5 +1,7 @@
 # override que usa jenkins para la pila de pruebas (proyecto geolife-ci):
 # no publica puertos fijos para no chocar con el despliegue real
+# Se combina con el compose principal: -f docker-compose.yml -f docker-compose.ci.yml
+# "!override []" borra la lista de puertos del archivo base (si no, se sumarían y chocarían)
 services:
   mongo:
     ports: !override []

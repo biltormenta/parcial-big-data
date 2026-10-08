@@ -11,17 +11,22 @@ from distributed import Client
 
 from app import config
 
+# Benchmark Dask vs Spark: misma operación (conteo por celda de grilla) sobre el mismo Parquet
 TAM_CELDA = 0.01
-REPETICIONES = 3
+REPETICIONES = 3  # se reporta la mediana de 3 corridas (más estable que una sola)
 SALIDA = os.path.join(config.DATOS_DIR, "benchmark", "dask.json")
 
 
 def rss_workers(client, workers):
+    """Suma la memoria real (RSS, en MB) de los procesos de los workers indicados."""
+    # client.run ejecuta la función dentro de cada worker y devuelve un diccionario worker -> valor
     r = client.run(lambda: psutil.Process().memory_info().rss, workers=workers)
     return sum(r.values()) / 1e6
 
 
 def grilla(ruta):
+    """Define la operación a medir: contar puntos por celda de grilla (aún no se ejecuta)."""
+    # solo se leen lat y lon del Parquet (formato columnar: no se carga lo demás)
     df = dd.read_parquet(ruta, columns=["lat", "lon"])
     ix = (df["lon"] / TAM_CELDA).map_partitions(np.floor)
     iy = (df["lat"] / TAM_CELDA).map_partitions(np.floor)
@@ -29,7 +34,9 @@ def grilla(ruta):
 
 
 def medir(client, ruta, workers):
-    # un hilo mira la memoria (rss) de los workers usados mientras corre la operacion
+    """Ejecuta la operación una vez y devuelve (segundos, memoria pico MB, nº celdas, nº puntos)."""
+    # Un hilo aparte mira la memoria (RSS) de los workers cada 0,3 s mientras corre la operación
+    # y se queda con el valor más alto: ese es el "pico".
     pico = [0.0]
     parar = threading.Event()
 
@@ -42,6 +49,7 @@ def medir(client, ruta, workers):
     h = threading.Thread(target=vigilar)
     h.start()
     t0 = time.perf_counter()
+    # workers=workers restringe el cálculo a esos workers: así se compara "1 worker" contra "2 workers"
     res = client.compute(grilla(ruta), workers=workers).result()
     seg = time.perf_counter() - t0
     parar.set()
@@ -54,6 +62,7 @@ def main():
     todos = list(client.scheduler_info()["workers"].keys())
     ruta = os.path.join(config.DATOS_DIR, "clean", "puntos")
     resultados = []
+    # Dos configuraciones: 1 worker y todos los workers (2)
     for n in (1, len(todos)):
         usados = todos[:n]
         medir(client, ruta, usados)  # primera corrida de calentamiento, no se cuenta

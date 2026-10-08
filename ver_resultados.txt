@@ -1,0 +1,65 @@
+VER RESULTADOS DEL PROYECTO
+===========================
+Con el sistema levantado (.\preparar_sustentacion.ps1 -CargarDatos), estos son los lugares donde se ven los resultados.
+
+DONDE MIRAR
+-----------
+Mapa (click = puntos cercanos; boton = zonas calientes de Spark)
+    http://localhost:5000
+
+Zonas calientes calculadas con Spark
+    http://localhost:5000/api/spark/zonas
+
+Puntos por hora del dia (Spark)
+    http://localhost:5000/api/spark/hora
+
+Otros resultados de Spark: grilla, dia, mes
+    http://localhost:5000/api/spark/grilla
+    http://localhost:5000/api/spark/dia
+    http://localhost:5000/api/spark/mes
+
+Busqueda por radio ($near)
+    http://localhost:5000/api/cercanos?lat=39.9985&lon=116.3265&radio=500&limit=10
+
+Agregacion con $geoNear (puntos por hora cerca de un lugar)
+    http://localhost:5000/api/geonear?lat=39.9985&lon=116.3265&radio=1000&por=hora
+
+Busqueda dentro de un poligono ($geoWithin), se envia por POST:
+    curl -X POST "http://localhost:5000/api/poligono?limit=100" -H "Content-Type: application/json" -d "{\"type\":\"Polygon\",\"coordinates\":[[[116.30,39.98],[116.34,39.98],[116.34,40.01],[116.30,40.01],[116.30,39.98]]]}"
+
+Estado de la API y cantidad de puntos cargados
+    http://localhost:5000/health
+
+Jenkins (builds, etapas y logs). Usuario: admin. Contrasena: la del archivo .env (no se sube a GitHub)
+    http://localhost:8080
+
+Interfaz de Spark (workers y jobs)
+    http://localhost:8081
+
+Dashboard de Dask (workers y tareas)
+    http://localhost:8787
+
+Datos crudos en MongoDB
+    docker compose exec mongo mongosh geolife
+    db.puntos.countDocuments({})          cantidad de puntos
+    db.puntos.findOne()                   un documento GeoJSON
+    db.spark_zonas_calientes.find().limit(5)
+
+Resumen de la ingesta (leidos, descartados, cargados)
+    docker compose run --rm --no-deps api cat /data/resumen_ingesta.json
+
+LO QUE MUESTRAN LOS DATOS (ultima corrida)
+------------------------------------------
+- 1.922.109 registros leidos, 43.429 duplicados descartados, 1.878.680 cargados en MongoDB.
+- 14.185 celdas de grilla de ~1 km; su suma (1.878.680) coincide con los puntos en MongoDB.
+- Zona mas densa: 69.368 puntos de 88 usuarios distintos, al noroeste del centro de Pekin.
+- Hora pico: 18:00 h, con 131.935 puntos.
+- Fines de semana: hay mas GPS grabado (332 mil el domingo contra 220 mil el lunes). Mide cuando
+  salian a grabar los participantes, no el trafico.
+- Dask frente a Spark (conteo por celda, mediana de 3 corridas):
+      Dask  1 worker 0,72 s | 2 workers 0,43 s
+      Spark 1 worker 1,22 s | 2 workers 1,08 s
+  Ambos dan el mismo resultado: 14.185 celdas y 1.878.680 puntos.
+- Tiempos de la API: $near 8-16 ms, $geoWithin 20 ms, $geoNear 480 ms (agrega 105.553 puntos).
+
+El analisis completo esta en docs/Informe_Tecnico_Geolife.docx

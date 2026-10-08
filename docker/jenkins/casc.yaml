@@ -1,17 +1,21 @@
+# Configuración de Jenkins como código (JCasC): se aplica sola cada vez que arranca el contenedor
 jenkins:
   systemMessage: "Jenkins del proyecto geolife (configurado con JCasC)"
   numExecutors: 2
+  # Un único usuario "admin"; su contraseña sale de la variable de entorno (archivo .env), no del repo
   securityRealm:
     local:
       allowsSignup: false
       users:
         - id: "admin"
           password: "${JENKINS_ADMIN_PASSWORD}"
+  # Solo usuarios con sesión iniciada pueden hacer algo; sin login no se ve nada
   authorizationStrategy:
     loggedInUsersCanDoAnything:
       allowAnonymousRead: false
 
 # el token de kaggle vive aqui como credencial, viene del entorno del contenedor y no esta en el repo
+# (el dataset es público: si no hay credenciales, quedan vacías y el pipeline funciona igual)
 credentials:
   system:
     domainCredentials:
@@ -27,6 +31,9 @@ credentials:
               secret: "${KAGGLE_KEY:-}"
               description: "token de la api de kaggle (opcional)"
 
+# Job del pipeline, creado automáticamente con Job DSL (el script es un solo bloque YAML plegado,
+# por eso NO se puede poner ningún comentario adentro): lee el repo de REPO_URL, rama main, ejecuta
+# el Jenkinsfile de la raíz y se dispara con el webhook de GitHub (githubPush)
 jobs:
   - script: >
       pipelineJob('geolife-geoespacial') {

@@ -11,6 +11,8 @@ def crudo(filas):
     return df
 
 
+# Pruebas de las reglas de limpieza con datos armados a mano (sin Dask ni Mongo).
+# De 5 filas solo 1 es buena; estadisticas() debe contar cada descarte en su categoría
 def test_descarta_nulos_fuera_de_rango_y_fecha_invalida():
     df = crudo([
         ["39.98", "116.31", "492", "2008-10-23", "02:53:04"],   # bueno
@@ -24,6 +26,7 @@ def test_descarta_nulos_fuera_de_rango_y_fecha_invalida():
     assert (s.leidos, s.nulos, s.fuera_rango, s.sin_fecha) == (5, 1, 2, 1)
 
 
+# Dos filas idénticas quedan en una; el usuario (4) y la trayectoria salen del nombre del archivo
 def test_duplicados_y_extraccion_de_usuario():
     fila = ["39.98", "116.31", "492", "2008-10-23", "02:53:04"]
     out = limpiar(crudo([fila, fila]))
@@ -31,6 +34,7 @@ def test_duplicados_y_extraccion_de_usuario():
     assert out.loc[0, "usuario"] == 4 and out.loc[0, "trayectoria"] == "20081023025304"
 
 
+# Altitud -777 (sin dato) pasa a nula; 100 pies = 30,48 metros
 def test_altitud_sin_dato_queda_nula_y_se_convierte_a_metros():
     out = limpiar(crudo([["39.98", "116.31", "-777", "2008-10-23", "02:53:04"],
                          ["39.98", "116.32", "100", "2008-10-23", "02:53:05"]]))
@@ -38,6 +42,7 @@ def test_altitud_sin_dato_queda_nula_y_se_convierte_a_metros():
     assert abs(out.loc[1, "alt_m"] - 30.48) < 1e-6
 
 
+# El documento de Mongo guarda el punto como [lon, lat] y la hora ya convertida a hora de Pekín (UTC+8)
 def test_geojson_es_punto_lon_lat_y_hora_local():
     out = limpiar(crudo([["39.98", "116.31", "492", "2008-10-23", "02:53:04"]]))
     doc = a_geojson(out)[0]

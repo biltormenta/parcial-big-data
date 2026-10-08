@@ -21,25 +21,31 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   const mapa = L.map('mapa').setView([39.98, 116.33], 11);
+  // Mapa de Leaflet centrado en Pekín; los mosaicos del fondo vienen de OpenStreetMap (requiere internet)
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution: '&copy; OpenStreetMap'}).addTo(mapa);
+  // "capa" agrupa lo que se dibuja encima (círculo, puntos, zonas) para poder borrarlo de una vez
   let capa = L.layerGroup().addTo(mapa);
   const info = document.getElementById('info');
 
+  // Al hacer click en el mapa: pide a la API los puntos dentro del radio (consulta $near) y los dibuja
   mapa.on('click', async (e) => {
     const radio = document.getElementById('radio').value;
     const r = await fetch(`/api/cercanos?lat=${e.latlng.lat}&lon=${e.latlng.lng}&radio=${radio}&limit=500`);
     const fc = await r.json();
     capa.clearLayers();
     L.circle(e.latlng, {radius: Number(radio), color: 'red', fill: false}).addTo(capa);
+    // La API responde un FeatureCollection GeoJSON y Leaflet lo dibuja directamente (un circulito por punto)
     L.geoJSON(fc, {pointToLayer: (f, ll) => L.circleMarker(ll, {radius: 3})}).addTo(capa);
     info.textContent = `${fc.count} puntos`;
   });
 
+  // Botón "ver zonas calientes": dibuja las zonas de mayor concentración que calculó Spark
   document.getElementById('zonas').onclick = async () => {
     const r = await fetch('/api/spark/zonas?limit=50');
     const j = await r.json();
     capa.clearLayers();
     j.datos.forEach(z => {
+      // GeoJSON guarda [lon, lat] pero Leaflet espera [lat, lon]: por eso se invierte al dibujar
       const [lon, lat] = z.loc.coordinates;
       L.circle([lat, lon], {radius: 600, color: 'orange'}).bindPopup(`#${z.ranking}: ${z.n} puntos`).addTo(capa);
     });

@@ -1,5 +1,10 @@
+# Un solo comando levanta todo el sistema: docker compose up -d --build
+# "name" fija el nombre del proyecto: así Jenkins y tu terminal manejan los mismos contenedores
 name: geolife
 
+# ---- Plantillas reutilizables (anclas YAML): evitan repetir la misma configuración ----
+# Imagen de Python que usan Dask, la API, la ingesta y las pruebas (docker/app.Dockerfile).
+# Todas comparten el volumen "datos" para ver los mismos archivos (dataset y Parquet limpio).
 x-app: &app
   build:
     context: .
@@ -13,6 +18,7 @@ x-app: &app
   volumes:
     - datos:/data
 
+# Imagen de Spark con el MongoDB Spark Connector ya instalado (docker/spark.Dockerfile)
 x-spark: &spark
   build:
     context: .
@@ -23,6 +29,9 @@ x-spark: &spark
     - datos:/data
 
 services:
+  # Base de datos: guarda los puntos como GeoJSON con índice 2dsphere.
+  # El healthcheck permite que los demás servicios esperen a que Mongo responda de verdad.
+  # El límite de memoria y la caché de WiredTiger evitan que Mongo se coma la RAM del equipo.
   mongo:
     image: mongo:7
     ports: ["27017:27017"]
@@ -38,6 +47,7 @@ services:
       resources:
         limits: {memory: 1200m}
 
+  # Dask: el scheduler reparte tareas (dashboard en el puerto 8787) y 2 workers las ejecutan
   dask-scheduler:
     <<: *app
     command: ["dask", "scheduler", "--port", "8786", "--dashboard-address", ":8787"]
@@ -48,8 +58,9 @@ services:
     command: ["dask", "worker", "tcp://dask-scheduler:8786", "--nthreads", "1", "--memory-limit", "1GB"]
     depends_on: [dask-scheduler]
     deploy:
-      replicas: 2
+      replicas: 2  # "al menos dos workers" que pide el taller
 
+  # Spark: un nodo maestro (interfaz web en el 8081) y 2 workers de 1 núcleo y 800 MB
   spark-master:
     <<: *spark
     hostname: spark-master
@@ -67,6 +78,8 @@ services:
     deploy:
       replicas: 2
 
+  # API Flask (gunicorn, definido en el Dockerfile). Solo arranca cuando Mongo está sano.
+  # Su healthcheck llama a /health: así "docker compose up --wait" sabe cuándo ya responde.
   api:
     <<: *app
     ports: ["5000:5000"]
@@ -79,6 +92,7 @@ services:
       retries: 20
 
   # job de una sola vez: descarga de kaggle + limpieza con dask + carga a mongo
+  # "profiles" lo deja fuera del arranque normal: solo corre con --profile jobs
   ingesta:
     <<: *app
     command: ["python", "-m", "app.ingesta"]
@@ -89,6 +103,7 @@ services:
       DASK_SCHEDULER: tcp://dask-scheduler:8786
       DATOS_DIR: /data
       OBJETIVO_REGISTROS: ${OBJETIVO_REGISTROS:-2000000}
+      # Credenciales de Kaggle opcionales: vienen del .env o de Jenkins, nunca del repositorio
       KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
       KAGGLE_KEY: ${KAGGLE_KEY:-}
     depends_on:
@@ -96,6 +111,7 @@ services:
       dask-worker: {condition: service_started}
 
   # pruebas de humo contra la api (las usa jenkins)
+  # También quedan fuera del arranque normal (profile "tests"); esperan a que la API esté sana
   pruebas-api:
     <<: *app
     command: ["pytest", "tests/smoke", "-v"]
@@ -107,6 +123,9 @@ services:
     depends_on:
       api: {condition: service_healthy}
 
+  # Jenkins con imagen propia (docker/jenkins). Se monta el socket de Docker del equipo para
+  # que Jenkins pueda construir y levantar contenedores. jenkins_home conserva su configuración.
+  # OJO: si no existe el archivo .env la contraseña de admin cae al valor "admin": no exponerlo así a internet.
   jenkins:
     build:
       context: docker/jenkins
@@ -122,6 +141,7 @@ services:
       - jenkins_home:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
 
+# Volúmenes con nombre: los datos sobreviven aunque se apaguen o recreen los contenedores
 volumes:
   datos:
   mongo_datos:

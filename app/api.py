@@ -60,6 +60,7 @@ def cercanos():
     lat, lon = consultas.validar_punto(request.args.get("lat"), request.args.get("lon"))
     radio = consultas.validar_radio(request.args.get("radio"))
     limite = consultas.validar_limite(request.args.get("limit"))
+    # La consulta real vive en consultas.py; aquí solo se validan los parámetros y se arma la respuesta
     docs = consultas.cercanos(db()[config.COLECCION_PUNTOS], lat, lon, radio, limite)
     return jsonify(consultas.coleccion_fc(docs))
 
@@ -67,6 +68,7 @@ def cercanos():
 # Endpoint para consultas dentro de un polígono GeoJSON utilizando $geoWithin
 @app.post("/api/poligono")
 def poligono():
+    # silent=True: si el cuerpo no es JSON válido devuelve None en vez de lanzar error, y abajo se responde 400
     cuerpo = request.get_json(silent=True)
     if cuerpo is None:
         raise ParametroInvalido("el cuerpo debe ser un JSON con el poligono GeoJSON")
@@ -117,6 +119,7 @@ def spark(nombre):
         raise ParametroInvalido(f"resultado desconocido, opciones: {', '.join(RESULTADOS_SPARK)}")
     coleccion, orden = RESULTADOS_SPARK[nombre]
     limite = consultas.validar_limite(request.args.get("limit"), defecto=50)
+    # Los resultados de Spark ya están calculados y guardados en Mongo: aquí solo se leen (sin el _id interno)
     docs = list(db()[coleccion].find({}, {"_id": 0}).sort(orden).limit(limite))
     return jsonify(resultado=nombre, count=len(docs), datos=docs)
 
