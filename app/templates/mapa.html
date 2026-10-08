@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Geolife - mapa</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  #mapa { height: 100vh; }
+  #panel { position: absolute; z-index: 1000; top: 10px; right: 10px; background: #fff; padding: 8px 12px; border-radius: 6px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="panel">
+  haz click en el mapa para buscar puntos cercanos<br>
+  radio (m): <input id="radio" type="number" value="500" style="width:70px">
+  <button id="zonas">ver zonas calientes (spark)</button>
+  <div id="info"></div>
+</div>
+<div id="mapa"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const mapa = L.map('mapa').setView([39.98, 116.33], 11);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution: '&copy; OpenStreetMap'}).addTo(mapa);
+  let capa = L.layerGroup().addTo(mapa);
+  const info = document.getElementById('info');
+
+  mapa.on('click', async (e) => {
+    const radio = document.getElementById('radio').value;
+    const r = await fetch(`/api/cercanos?lat=${e.latlng.lat}&lon=${e.latlng.lng}&radio=${radio}&limit=500`);
+    const fc = await r.json();
+    capa.clearLayers();
+    L.circle(e.latlng, {radius: Number(radio), color: 'red', fill: false}).addTo(capa);
+    L.geoJSON(fc, {pointToLayer: (f, ll) => L.circleMarker(ll, {radius: 3})}).addTo(capa);
+    info.textContent = `${fc.count} puntos`;
+  });
+
+  document.getElementById('zonas').onclick = async () => {
+    const r = await fetch('/api/spark/zonas?limit=50');
+    const j = await r.json();
+    capa.clearLayers();
+    j.datos.forEach(z => {
+      const [lon, lat] = z.loc.coordinates;
+      L.circle([lat, lon], {radius: 600, color: 'orange'}).bindPopup(`#${z.ranking}: ${z.n} puntos`).addTo(capa);
+    });
+    info.textContent = `${j.count} zonas`;
+  };
+</script>
+</body>
+</html>
