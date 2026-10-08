@@ -109,10 +109,12 @@ Dejamos cada modificación probable escrita y comentada, marcada con `>>> PARA L
 | Limitar el radio máximo a 50 km | `app/consultas.py`, `validar_radio` | Comentar la condición de 100000 y descomentar la de 50000 |
 | Probar lo anterior con pruebas | `tests/smoke/test_api.py`, al final | Descomentar `test_endpoint_sustentacion` y `test_radio_negativo_da_400` |
 
-Después: `git add . && git commit -m "..." && git push`. Jenkins arranca solo, corre las pruebas y despliega. Si se descomenta una prueba del endpoint nuevo pero no el endpoint, las pruebas fallan y Jenkins **no despliega**: así se muestra que el pipeline protege el despliegue. Para ver las pruebas sin Jenkins: `docker compose --profile tests run --rm --build pruebas-api`.
+Para subir el cambio: **doble clic en `subir_cambios.bat`** (o `.\subir_cambios.ps1 -Mensaje "lo que se cambió"`). El script revisa que el código Python no tenga errores de sintaxis, muestra los cambios, pide confirmación, hace commit, trae lo que otros hayan subido (sin borrar nada), hace push y sigue el build de Jenkins hasta mostrar si salió en verde o en rojo. Si Jenkins corre en otro PC: `.\subir_cambios.ps1 -JenkinsUrl "https://LA-URL-DEL-TUNEL" -JenkinsClave "LA-CLAVE"`. A mano sería: `git add . && git commit -m "..." && git push`. Jenkins arranca solo, corre las pruebas y despliega. Si se descomenta una prueba del endpoint nuevo pero no el endpoint, las pruebas fallan y Jenkins **no despliega**: así se muestra que el pipeline protege el despliegue. Para ver las pruebas sin Jenkins: `docker compose --profile tests run --rm --build pruebas-api`.
 
 ## Máquina de la sustentación (checklist)
 Hacerlo el día antes, no el mismo día.
+
+**Opción rápida (recomendada):** después de `git pull`, hacer doble clic en `iniciar_todo.bat` (o ejecutar `.\iniciar_todo.ps1`). El script abre Docker si hace falta, instala cloudflared si no está, levanta todo el sistema, carga los datos solo si Mongo está vacío, abre los túneles de Jenkins y de la API, comprueba que el webhook responda y deja la URL del webhook copiada al portapapeles. Lo único manual que queda es pegar esa URL en el webhook de GitHub (paso 6). La ventana debe quedar abierta; para apagar todo: `.\iniciar_todo.ps1 -Detener`. Los pasos de abajo son lo que el script hace, por si hay que hacerlo a mano.
 
 1. **Preparar el equipo.** Docker Desktop abierto y en "running". Git instalado. Mínimo 6 GB de memoria para Docker (Settings > Resources).
 2. **Obtener el proyecto:** `git clone https://github.com/biltormenta/parcial-big-data.git` y entrar a la carpeta (o descomprimir el zip que se envió y entrar a la carpeta del proyecto, la que tiene `docker-compose.yml`).
@@ -136,7 +138,10 @@ spark_jobs/           agregaciones y benchmark de Spark
 tests/                unit (pytest) y smoke (contra la API)
 docker/               Dockerfiles de la app, de Spark y de Jenkins (con JCasC)
 docs/                 informe técnico
-docker-compose.yml, docker-compose.ci.yml, Jenkinsfile, preparar_sustentacion.ps1
+docker-compose.yml, docker-compose.ci.yml, Jenkinsfile
+iniciar_todo.bat/.ps1       levanta todo y deja listo el webhook (doble clic)
+subir_cambios.bat/.ps1      sube los cambios a GitHub y sigue el build de Jenkins (doble clic)
+preparar_sustentacion.ps1   levanta el sistema (lo usa iniciar_todo)
 ```
 
 ## Seguridad de credenciales
