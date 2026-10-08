@@ -1,14 +1,19 @@
 from datetime import datetime
 
+# Límite máximo de registros permitidos por consulta para evitar saturación de memoria
 LIMITE_MAX = 5000
+
+# Proyección de campos seleccionados al consultar MongoDB (excluyendo el _id predeterminado)
 CAMPOS = {"_id": 0, "usuario": 1, "trayectoria": 1, "ts": 1, "altitud_m": 1, "hora": 1, "loc": 1}
 
 
 class ParametroInvalido(ValueError):
+    """Excepción personalizada para capturar errores de validación en parámetros de entrada."""
     pass
 
 
 def validar_punto(lat, lon):
+    """Valida que las coordenadas de latitud y longitud estén dentro de los rangos geográficos permitidos."""
     try:
         lat, lon = float(lat), float(lon)
     except (TypeError, ValueError):
@@ -19,16 +24,28 @@ def validar_punto(lat, lon):
 
 
 def validar_radio(radio):
+    """Valida que el radio de búsqueda en metros sea un valor numérico válido y positivo."""
     try:
         radio = float(radio)
     except (TypeError, ValueError):
         raise ParametroInvalido("radio debe ser un numero (metros)")
+    
+    # ------------------------------------------------------------------------------------------
+    # CÓDIGO ORIGINAL (ACTIVO): Rango máximo permitido de 100,000 metros (100 km)
+    # ------------------------------------------------------------------------------------------
     if not 0 < radio <= 100000:
         raise ParametroInvalido("radio debe estar entre 1 y 100000 metros")
+
+    # >>> PARA LA SUSTENTACIÓN: Si el profesor pide limitar el radio máximo a 50 km (50,000 metros),
+    # COMENTAR la condición de arriba y DESCOMENTAR las siguientes 2 líneas: <<<
+    # if not 0 < radio <= 50000:
+    #     raise ParametroInvalido("radio debe estar entre 1 y 50000 metros")
+
     return radio
 
 
 def validar_limite(limite, defecto=100):
+    """Valida y aplica topes al número límite de registros solicitados por el usuario."""
     if limite in (None, ""):
         return defecto
     try:
@@ -41,7 +58,7 @@ def validar_limite(limite, defecto=100):
 
 
 def validar_poligono(entrada):
-    # acepta el poligono suelto o dentro de un Feature
+    """Garantiza la estructura GeoJSON válida para un Polygon o MultiPolygon con anillos cerrados."""
     geom = entrada
     if isinstance(geom, dict) and geom.get("type") == "Feature":
         geom = geom.get("geometry")
@@ -60,6 +77,7 @@ def validar_poligono(entrada):
 
 
 def _feature(doc):
+    """Transforma un documento con formato MongoDB a un objeto de tipo GeoJSON Feature."""
     d = dict(doc)
     loc = d.pop("loc")
     for k, v in d.items():
@@ -69,24 +87,30 @@ def _feature(doc):
 
 
 def coleccion_fc(docs):
+    """Estructura una lista de documentos en una entidad GeoJSON FeatureCollection."""
     feats = [_feature(d) for d in docs]
     return {"type": "FeatureCollection", "count": len(feats), "features": feats}
 
 
 def cercanos(col, lat, lon, radio_m, limite):
-    # $near ya devuelve ordenado de mas cerca a mas lejos
+    """Consulta puntos cercanos dentro de un radio usando el operador espacial $near de MongoDB."""
     filtro = {"loc": {"$near": {"$geometry": {"type": "Point", "coordinates": [lon, lat]},
                                 "$maxDistance": radio_m}}}
     return list(col.find(filtro, CAMPOS).limit(limite))
 
 
 def dentro_poligono(col, geom, limite):
+    """Consulta puntos que se encuentran contenidos dentro de una geometría usando $geoWithin."""
     filtro = {"loc": {"$geoWithin": {"$geometry": geom}}}
     return list(col.find(filtro, CAMPOS).limit(limite))
 
 
 def geonear_por_campo(col, lat, lon, radio_m, campo="hora"):
-    # $geoNear tiene que ser la primera etapa del pipeline
+    """Ejecuta un pipeline de agregación usando $geoNear para calcular promedios y métricas según el campo agrupador."""
+    
+    # ------------------------------------------------------------------------------------------
+    # CÓDIGO ORIGINAL (ACTIVO): Pipeline estándar de agregación geoespacial
+    # ------------------------------------------------------------------------------------------
     pipeline = [
         {"$geoNear": {"near": {"type": "Point", "coordinates": [lon, lat]},
                       "distanceField": "dist_m", "maxDistance": radio_m,
@@ -98,4 +122,19 @@ def geonear_por_campo(col, lat, lon, radio_m, campo="hora"):
                       "usuarios_distintos": {"$size": "$usuarios"}}},
         {"$sort": {campo: 1}},
     ]
+
+    # >>> PARA LA SUSTENTACIÓN: Si el profesor pide ordenar los resultados por cantidad de puntos DESCENDENTE
+    # (en lugar de ordenar por el campo temporal), COMENTAR la etapa '$sort' original y DESCOMENTAR la siguiente opción: <<<
+    # pipeline = [
+    #     {"$geoNear": {"near": {"type": "Point", "coordinates": [lon, lat]},
+    #                   "distanceField": "dist_m", "maxDistance": radio_m,
+    #                   "spherical": True, "key": "loc"}},
+    #     {"$group": {"_id": f"${campo}", "puntos": {"$sum": 1},
+    #                 "dist_media_m": {"$avg": "$dist_m"}, "usuarios": {"$addToSet": "$usuario"}}},
+    #     {"$project": {"_id": 0, campo: "$_id", "puntos": 1,
+    #                   "dist_media_m": {"$round": ["$dist_media_m", 1]},
+    #                   "usuarios_distintos": {"$size": "$usuarios"}}},
+    #     {"$sort": {"puntos": -1}},
+    # ]
+
     return list(col.aggregate(pipeline))
