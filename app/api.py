@@ -99,12 +99,12 @@ def geonear():
     # ----------------------------------------------------------------------------------
     # CÓDIGO ORIGINAL (ACTIVO) - Agrupación por defecto: "hora"
     # ----------------------------------------------------------------------------------
-    campo = request.args.get("por", "hora")
+   # campo = request.args.get("por", "hora")
 
     # >>> PARA LA SUSTENTACIÓN: Si el profesor pide cambiar el parámetro por defecto a "dia_semana"
     # 1. Comenta la línea 'campo = request.args.get("por", "hora")' de arriba.
     # 2. Descomenta la siguiente línea:
-    # campo = request.args.get("por", "dia_semana")
+    campo = request.args.get("por", "dia_semana")
 
     if campo not in ("hora", "dia_semana", "mes", "anio"):
         raise ParametroInvalido("por debe ser hora, dia_semana, mes o anio")
